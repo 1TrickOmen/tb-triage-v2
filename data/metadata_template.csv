@@ -1,0 +1,1 @@
+image_id,patient_id,source_dataset,label_raw,label_final,image_path,mask_path,view_position,width,height,split,is_external_test,include_for_training,bbox_count,notes

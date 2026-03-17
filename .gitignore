@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtualenvs
+.venv/
+venv/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+# Large/generated experiment outputs
+experiments/*
+!experiments/.gitkeep
+
+# Data: keep lightweight templates/docs only, never raw or extracted datasets
+data/raw/
+data/processed/
+data/splits/
+
+# Allow small tracked metadata templates if present
+!data/metadata_template.csv
+!data/*.md
+
+# Reports/artifacts
+reports/*.png
+reports/*.jpg
+reports/*.jpeg
+reports/*.pdf
+reports/*.html

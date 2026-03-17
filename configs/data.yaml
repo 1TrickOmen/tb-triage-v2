@@ -1,0 +1,32 @@
+datasets:
+  montgomery:
+    enabled: true
+    raw_dir: data/raw/montgomery
+    masks_available: true
+  shenzhen:
+    enabled: true
+    raw_dir: data/raw/shenzhen
+    masks_available: false
+  tbx11k:
+    enabled: true
+    raw_dir: data/raw/tbx11k
+    masks_available: false
+
+labels:
+  target_classes:
+    - TB
+    - Normal
+  exclude_unknown: true
+
+splits:
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  stratify: true
+  patient_level_if_possible: true
+  external_holdout_source_first: tbx11k
+
+image:
+  classifier_size: [256, 256]
+  segmentation_size: [512, 512]
+  channels: 3

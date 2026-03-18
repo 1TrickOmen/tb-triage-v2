@@ -316,6 +316,53 @@ Use the selected operating threshold from Step 3. If you want to stay consistent
 That writes the true unseen-source outputs under:
 - `experiments/source_holdout/shenzhen_class_weighted/external_eval/shenzhen_holdout_only/`
 
+### Next disciplined experiment: source-balanced normal-robustness variant
+This is the smallest practical change for the current failure mode: keep MobileNetV2 fixed, keep the source-held-out protocol fixed, but rebalance the **training loss mass** so dominant source/class groups stop drowning out minority normal groups.
+
+The helper below writes a new metadata CSV with a `sample_weight` column. In the recommended `source_label` mode, every `(source_dataset, label_final)` training group gets equal total weight mass. That means, for example, a rare `montgomery::Normal` group no longer counts for far less than a giant `tbx11k::Normal` group.
+
+### Recommended run: hold out one source, then weight the seen-source training rows
+Example: hold out `shenzhen`, then train the source-balanced variant.
+
+```bash
+!python scripts/colab_prepare_source_holdout.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/merged_metadata.csv \
+  --holdout-source shenzhen
+
+!python scripts/colab_prepare_source_balanced_metadata.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/shenzhen_experiment_metadata.csv \
+  --output-metadata-csv data/processed/source_holdout/shenzhen_experiment_metadata_source_balanced.csv \
+  --balance-mode source_label
+
+!python scripts/colab_train_baseline.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/shenzhen_experiment_metadata_source_balanced.csv \
+  --output-dir experiments/source_holdout/shenzhen_source_balanced \
+  --epochs 15 \
+  --batch-size 32 \
+  --image-size 256 \
+  --class-weight none
+
+!python scripts/colab_analyze_thresholds.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/shenzhen_experiment_metadata_source_balanced.csv \
+  --run-dir experiments/source_holdout/shenzhen_source_balanced \
+  --target-recall 0.90
+
+!python scripts/colab_eval_external.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/shenzhen_holdout_only.csv \
+  --run-dir experiments/source_holdout/shenzhen_source_balanced \
+  --threshold 0.40
+```
+
+Notes:
+- Use `--class-weight none` here. The trainer now accepts metadata `sample_weight`, and stacking class weights on top would double-count the biasing.
+- The training metrics JSON now records `sample_weight_summary`, including total loss mass per `(source,label)` group, so you can verify the rebalance actually happened instead of trusting vibes.
+- If you want a narrower ablation later, `--balance-mode normal_by_source` only rebalances Normal rows across sources and leaves TB rows at weight 1.0.
+
 ### Repeat for the other two sources
 #### Hold out Montgomery
 ```bash
@@ -324,19 +371,25 @@ That writes the true unseen-source outputs under:
   --metadata-csv data/processed/merged_metadata.csv \
   --holdout-source montgomery
 
-!python scripts/colab_train_baseline.py \
+!python scripts/colab_prepare_source_balanced_metadata.py \
   --repo-root /content/tb-triage-v2 \
   --metadata-csv data/processed/source_holdout/montgomery_experiment_metadata.csv \
-  --output-dir experiments/source_holdout/montgomery_class_weighted \
+  --output-metadata-csv data/processed/source_holdout/montgomery_experiment_metadata_source_balanced.csv \
+  --balance-mode source_label
+
+!python scripts/colab_train_baseline.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/montgomery_experiment_metadata_source_balanced.csv \
+  --output-dir experiments/source_holdout/montgomery_source_balanced \
   --epochs 15 \
   --batch-size 32 \
   --image-size 256 \
-  --class-weight balanced
+  --class-weight none
 
 !python scripts/colab_eval_external.py \
   --repo-root /content/tb-triage-v2 \
   --metadata-csv data/processed/source_holdout/montgomery_holdout_only.csv \
-  --run-dir experiments/source_holdout/montgomery_class_weighted \
+  --run-dir experiments/source_holdout/montgomery_source_balanced \
   --threshold 0.40
 ```
 
@@ -347,19 +400,25 @@ That writes the true unseen-source outputs under:
   --metadata-csv data/processed/merged_metadata.csv \
   --holdout-source tbx11k
 
-!python scripts/colab_train_baseline.py \
+!python scripts/colab_prepare_source_balanced_metadata.py \
   --repo-root /content/tb-triage-v2 \
   --metadata-csv data/processed/source_holdout/tbx11k_experiment_metadata.csv \
-  --output-dir experiments/source_holdout/tbx11k_class_weighted \
+  --output-metadata-csv data/processed/source_holdout/tbx11k_experiment_metadata_source_balanced.csv \
+  --balance-mode source_label
+
+!python scripts/colab_train_baseline.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/tbx11k_experiment_metadata_source_balanced.csv \
+  --output-dir experiments/source_holdout/tbx11k_source_balanced \
   --epochs 15 \
   --batch-size 32 \
   --image-size 256 \
-  --class-weight balanced
+  --class-weight none
 
 !python scripts/colab_eval_external.py \
   --repo-root /content/tb-triage-v2 \
   --metadata-csv data/processed/source_holdout/tbx11k_holdout_only.csv \
-  --run-dir experiments/source_holdout/tbx11k_class_weighted \
+  --run-dir experiments/source_holdout/tbx11k_source_balanced \
   --threshold 0.40
 ```
 

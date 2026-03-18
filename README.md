@@ -43,6 +43,8 @@ It also now supports the minimal segmentation value test path: predict or consum
 
 And, crucially, it now has a minimal **source-held-out** path: prepare metadata that holds out one source (`montgomery`, `shenzhen`, or `tbx11k`) as a true unseen external test source, train only on the remaining sources, then evaluate the saved model on the held-out source separately. The trainer now respects explicit metadata split columns instead of silently reshuffling everything.
 
+It also now supports a small **source-balanced weighting** variant for the same MobileNetV2 baseline: a helper can write per-row `sample_weight` values so the training loss is balanced across `(source_dataset, label_final)` groups, which is the cleanest next shot at reducing false positives on unseen-source normal images without touching the backbone.
+
 ## Milestones
 ### M1 — Data Foundation
 - [ ] Define metadata schema

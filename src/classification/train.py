@@ -39,7 +39,11 @@ def _load_split_subset(df: pd.DataFrame, split_column: str, split_name: str, ima
     images, labels = load_images_from_metadata(split_df, image_size=image_size)
     if len(images) == 0:
         raise ValueError(f'No images were loaded for split {split_name!r}.')
-    return split_df.reset_index(drop=True), images, labels
+    split_df = split_df.reset_index(drop=True)
+    sample_weights = None
+    if 'sample_weight' in split_df.columns:
+        sample_weights = split_df['sample_weight'].fillna(1.0).astype(float).to_numpy()
+    return split_df, images, labels, sample_weights
 
 
 def _configure_tensorflow() -> None:
@@ -76,10 +80,11 @@ def train_baseline_from_metadata(
         raise ValueError('Need at least two classes with valid training rows.')
 
     split_column = _select_explicit_split_column(df)
+    train_sample_weight = None
     if split_column:
-        train_df, X_train, y_train = _load_split_subset(df, split_column, 'train', image_size)
-        val_df, X_val, y_val = _load_split_subset(df, split_column, 'val', image_size)
-        test_df, X_test, y_test = _load_split_subset(df, split_column, 'test', image_size)
+        train_df, X_train, y_train, train_sample_weight = _load_split_subset(df, split_column, 'train', image_size)
+        val_df, X_val, y_val, _ = _load_split_subset(df, split_column, 'val', image_size)
+        test_df, X_test, y_test, _ = _load_split_subset(df, split_column, 'test', image_size)
         split_summary = {
             split_column: split_column,
             'train_rows': int(len(train_df)),
@@ -118,7 +123,7 @@ def train_baseline_from_metadata(
     )
     datagen.fit(X_train)
 
-    train_generator = datagen.flow(X_train, y_train, batch_size=batch_size, shuffle=True)
+    train_generator = datagen.flow(X_train, y_train, sample_weight=train_sample_weight, batch_size=batch_size, shuffle=True)
 
     class_weight = None
     if class_weight_mode == 'balanced':
@@ -127,6 +132,9 @@ def train_baseline_from_metadata(
         class_weight = {int(label): float(weight) for label, weight in zip(classes, weights)}
     elif class_weight_mode != 'none':
         raise ValueError("class_weight_mode must be 'none' or 'balanced'")
+
+    if train_sample_weight is not None and class_weight is not None:
+        raise ValueError('Use either metadata sample_weight or class_weight, not both at once.')
 
     model, last_conv_layer_name = build_mobilenetv2(
         input_shape=tuple(image_size) + (3,),
@@ -152,6 +160,22 @@ def train_baseline_from_metadata(
     y_pred_prob = model.predict(X_test)
     y_pred = np.argmax(y_pred_prob, axis=1)
 
+    sample_weight_summary = None
+    if train_sample_weight is not None:
+        sample_weight_summary = {
+            'min': float(np.min(train_sample_weight)),
+            'max': float(np.max(train_sample_weight)),
+            'mean': float(np.mean(train_sample_weight)),
+            'sum': float(np.sum(train_sample_weight)),
+        }
+        if split_column and 'source_dataset' in train_df.columns and 'label_final' in train_df.columns:
+            per_group = train_df[['source_dataset', 'label_final']].copy()
+            per_group['sample_weight'] = train_sample_weight
+            sample_weight_summary['sum_by_source_label'] = {
+                f'{source_dataset}::{label_final}': float(weight_sum)
+                for (source_dataset, label_final), weight_sum in per_group.groupby(['source_dataset', 'label_final'])['sample_weight'].sum().items()
+            }
+
     metrics = {
         'accuracy': float(accuracy),
         'loss': float(loss),
@@ -165,6 +189,8 @@ def train_baseline_from_metadata(
         'trainable_base': bool(trainable_base),
         'class_weight_mode': class_weight_mode,
         'class_weight': class_weight,
+        'sample_weight_column': 'sample_weight' if train_sample_weight is not None else '',
+        'sample_weight_summary': sample_weight_summary,
         'split_summary': split_summary,
         'tensorflow_version': tf.__version__,
         'cuda_visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES', ''),

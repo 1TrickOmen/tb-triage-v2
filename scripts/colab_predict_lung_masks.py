@@ -85,15 +85,30 @@ def load_model(model_path: Path):
     return tf.keras.models.load_model(model_path, custom_objects=get_segmentation_custom_objects(), compile=False)
 
 
-def get_model_input_channels(model: tf.keras.Model) -> int:
+def get_model_input_spec(model: tf.keras.Model) -> tuple[tuple[int, int], int]:
     input_shape = model.input_shape
     if isinstance(input_shape, list):
         input_shape = input_shape[0]
 
-    channels = input_shape[-1]
+    if len(input_shape) != 4:
+        raise ValueError(f'Unsupported segmentation model input shape: {input_shape}. Expected rank-4 NHWC input.')
+
+    height, width, channels = input_shape[1], input_shape[2], input_shape[3]
     if channels not in (1, 3):
         raise ValueError(f'Unsupported segmentation model input shape: {input_shape}. Expected ...x1 or ...x3 input.')
-    return int(channels)
+
+    resolved_size = (
+        int(width) if width is not None else -1,
+        int(height) if height is not None else -1,
+    )
+    return resolved_size, int(channels)
+
+
+def resolve_inference_image_size(cli_image_size: int, model_size: tuple[int, int]) -> tuple[int, int]:
+    model_width, model_height = model_size
+    if model_width > 0 and model_height > 0:
+        return model_width, model_height
+    return cli_image_size, cli_image_size
 
 
 def preprocess_image(image_bgr: np.ndarray, image_size: tuple[int, int], channels: int) -> np.ndarray:
@@ -139,7 +154,8 @@ def main() -> None:
     output_metadata_csv.parent.mkdir(parents=True, exist_ok=True)
 
     model = load_model(model_path)
-    input_channels = get_model_input_channels(model)
+    model_input_size, input_channels = get_model_input_spec(model)
+    inference_image_size = resolve_inference_image_size(args.image_size, model_input_size)
     df = pd.read_csv(metadata_csv)
     df = resolve_metadata_paths(df, str(metadata_csv))
 
@@ -161,7 +177,7 @@ def main() -> None:
             continue
 
         original_h, original_w = image_bgr.shape[:2]
-        image_input = preprocess_image(image_bgr, (args.image_size, args.image_size), input_channels)
+        image_input = preprocess_image(image_bgr, inference_image_size, input_channels)
         prediction = model.predict(np.expand_dims(image_input, axis=0), verbose=0)[0]
         mask = postprocess_mask(prediction, (original_w, original_h), args.threshold)
 
@@ -180,6 +196,9 @@ def main() -> None:
         'rows': int(len(df)),
         'generated_masks': int(generated),
         'skipped_rows': int(skipped),
+        'requested_image_size': int(args.image_size),
+        'effective_model_input_size': [int(inference_image_size[0]), int(inference_image_size[1])],
+        'input_channels': int(input_channels),
         'output_masks_dir': str(output_masks_dir),
         'output_metadata_csv': str(output_metadata_csv),
     }, indent=2))

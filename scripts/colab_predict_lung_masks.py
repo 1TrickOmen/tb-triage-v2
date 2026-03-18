@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from tensorflow.keras import backend as K
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
@@ -21,8 +22,67 @@ from src.classification.data_utils import resolve_metadata_paths  # noqa: E402
 VALID_IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff'}
 
 
+def _flatten_tensors(y_true: tf.Tensor, y_pred: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
+    y_true = tf.cast(y_true, tf.float32)
+    y_pred = tf.cast(y_pred, tf.float32)
+    return tf.reshape(y_true, [-1]), tf.reshape(y_pred, [-1])
+
+
+def dice_coefficient(y_true: tf.Tensor, y_pred: tf.Tensor, smooth: float = 1.0) -> tf.Tensor:
+    y_true_f, y_pred_f = _flatten_tensors(y_true, y_pred)
+    intersection = tf.reduce_sum(y_true_f * y_pred_f)
+    denominator = tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f)
+    return (2.0 * intersection + smooth) / (denominator + smooth)
+
+
+def dice_coef(y_true: tf.Tensor, y_pred: tf.Tensor, smooth: float = 1.0) -> tf.Tensor:
+    return dice_coefficient(y_true, y_pred, smooth=smooth)
+
+
+def dice_loss(y_true: tf.Tensor, y_pred: tf.Tensor, smooth: float = 1.0) -> tf.Tensor:
+    return 1.0 - dice_coefficient(y_true, y_pred, smooth=smooth)
+
+
+def bce_dice_loss(y_true: tf.Tensor, y_pred: tf.Tensor, smooth: float = 1.0) -> tf.Tensor:
+    bce = tf.reduce_mean(tf.keras.losses.binary_crossentropy(y_true, y_pred))
+    return bce + dice_loss(y_true, y_pred, smooth=smooth)
+
+
+def jaccard_index(y_true: tf.Tensor, y_pred: tf.Tensor, smooth: float = 1.0) -> tf.Tensor:
+    y_true_f, y_pred_f = _flatten_tensors(y_true, y_pred)
+    intersection = tf.reduce_sum(y_true_f * y_pred_f)
+    union = tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) - intersection
+    return (intersection + smooth) / (union + smooth)
+
+
+def iou(y_true: tf.Tensor, y_pred: tf.Tensor, smooth: float = 1.0) -> tf.Tensor:
+    return jaccard_index(y_true, y_pred, smooth=smooth)
+
+
+def iou_score(y_true: tf.Tensor, y_pred: tf.Tensor, smooth: float = 1.0) -> tf.Tensor:
+    return jaccard_index(y_true, y_pred, smooth=smooth)
+
+
+def jaccard_loss(y_true: tf.Tensor, y_pred: tf.Tensor, smooth: float = 1.0) -> tf.Tensor:
+    return 1.0 - jaccard_index(y_true, y_pred, smooth=smooth)
+
+
+def get_segmentation_custom_objects() -> dict[str, object]:
+    return {
+        'dice_coefficient': dice_coefficient,
+        'dice_coef': dice_coef,
+        'dice_loss': dice_loss,
+        'bce_dice_loss': bce_dice_loss,
+        'jaccard_index': jaccard_index,
+        'iou': iou,
+        'iou_score': iou_score,
+        'jaccard_loss': jaccard_loss,
+        'K': K,
+    }
+
+
 def load_model(model_path: Path):
-    return tf.keras.models.load_model(model_path)
+    return tf.keras.models.load_model(model_path, custom_objects=get_segmentation_custom_objects(), compile=False)
 
 
 def preprocess_image(image_bgr: np.ndarray, image_size: tuple[int, int]) -> np.ndarray:

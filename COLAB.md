@@ -151,8 +151,9 @@ The clean comparison is:
 5. rerun the same threshold analysis on the masked run
 
 ### What is assumed here
-- You already have or will provide a saved lung segmentation model, for example `artifacts/lung_segmentation.keras`.
+- You already have or will provide a saved lung segmentation model, for example `artifacts/lung_segmentation.keras` or a Kaggle-exported `best_model.keras`.
 - This repo does **not** yet train that segmentation model in Colab.
+- `scripts/colab_predict_lung_masks.py` now loads common Kaggle-style custom segmentation objects automatically (`dice_coefficient`, `dice_coef`, `dice_loss`, `bce_dice_loss`, `jaccard_index`, `iou`, `iou_score`, `jaccard_loss`), so a typical U-Net `.keras` export should load without manual notebook surgery.
 - The new scripts here only handle:
   - predicting/consuming masks
   - materializing masked classifier inputs
@@ -171,6 +172,8 @@ From `/content/tb-triage-v2`, run:
   --image-size 512 \
   --threshold 0.5
 ```
+
+If your segmentation artifact is the Kaggle U-Net export named `best_model.keras`, just point `--segmentation-model` at that file instead.
 
 That writes:
 - `data/processed/predicted_lung_masks/*.png`

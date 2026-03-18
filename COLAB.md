@@ -107,3 +107,37 @@ From `/content/tb-triage-v2`, run:
   --image-size 256 \
   --class-weight balanced
 ```
+
+## Threshold analysis for TB recall tradeoffs
+After the class-weighted run finishes, analyze TB probability thresholds from the saved artifacts:
+
+```bash
+!python scripts/colab_analyze_thresholds.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/merged_metadata.csv \
+  --run-dir experiments/colab-baseline-class-weighted
+```
+
+That writes:
+- `experiments/colab-baseline-class-weighted/threshold_analysis/threshold_metrics.csv`
+- `experiments/colab-baseline-class-weighted/threshold_analysis/test_predictions.csv` (only regenerated if an older run did not already save predictions)
+
+To pick the most precise threshold that still reaches a recall target, for example `0.90`:
+
+```bash
+!python scripts/colab_analyze_thresholds.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/merged_metadata.csv \
+  --run-dir experiments/colab-baseline-class-weighted \
+  --target-recall 0.90
+```
+
+To sweep a smaller custom threshold set:
+
+```bash
+!python scripts/colab_analyze_thresholds.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/merged_metadata.csv \
+  --run-dir experiments/colab-baseline-class-weighted \
+  --thresholds 0.10,0.20,0.30,0.40,0.50,0.60
+```

@@ -3,30 +3,20 @@ import json
 import os
 import numpy as np
 import pandas as pd
-import cv2
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, average_precision_score
 from sklearn.utils.class_weight import compute_class_weight
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras import optimizers, callbacks
 import tensorflow as tf
 
+from .data_utils import IMAGE_SIZE, SEED, coerce_bool, load_images_from_metadata, resolve_metadata_paths
 from .models import build_mobilenetv2
 from src.data.splits import stratified_train_val_test_split
 
-IMAGE_SIZE = (256, 256)
 BATCH_SIZE = 32
-SEED = 42
 NUM_CLASSES = 2
 DEFAULT_EPOCHS = 50
 DEFAULT_LEARNING_RATE = 1e-4
-
-
-def _coerce_bool(value) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {'1', 'true', 'yes'}
-    return bool(value)
 
 
 def _configure_tensorflow() -> None:
@@ -35,41 +25,6 @@ def _configure_tensorflow() -> None:
             tf.config.experimental.set_memory_growth(gpu, True)
     except Exception:
         pass
-
-
-def load_images_from_metadata(df: pd.DataFrame, image_size=IMAGE_SIZE):
-    images, labels = [], []
-    label_map = {'Normal': 0, 'TB': 1}
-    for _, row in df.iterrows():
-        img = cv2.imread(str(row['image_path']))
-        if img is None:
-            continue
-        img = cv2.resize(img, image_size)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        images.append(img)
-        labels.append(label_map[row['label_final']])
-    return np.array(images), np.array(labels)
-
-
-def _resolve_metadata_paths(df: pd.DataFrame, metadata_csv: str) -> pd.DataFrame:
-    metadata_path = Path(metadata_csv).resolve()
-    repo_root = metadata_path.parent.parent.parent
-
-    def resolve_path(value: str) -> str:
-        p = Path(value)
-        if p.is_absolute():
-            return str(p)
-        candidate_from_cwd = Path.cwd() / p
-        if candidate_from_cwd.exists():
-            return str(candidate_from_cwd.resolve())
-        candidate_from_repo = repo_root / p
-        if candidate_from_repo.exists():
-            return str(candidate_from_repo.resolve())
-        return str(candidate_from_repo.resolve())
-
-    df = df.copy()
-    df['image_path'] = df['image_path'].astype(str).apply(resolve_path)
-    return df
 
 
 def train_baseline_from_metadata(
@@ -86,10 +41,10 @@ def train_baseline_from_metadata(
     _configure_tensorflow()
 
     df = pd.read_csv(metadata_csv)
-    df['include_for_training'] = df['include_for_training'].apply(_coerce_bool)
+    df['include_for_training'] = df['include_for_training'].apply(coerce_bool)
     df = df[df['include_for_training']].copy()
     df = df[df['label_final'].isin(['Normal', 'TB'])].copy()
-    df = _resolve_metadata_paths(df, metadata_csv)
+    df = resolve_metadata_paths(df, metadata_csv)
     df['image_exists'] = df['image_path'].apply(lambda p: Path(p).exists())
     missing_count = int((~df['image_exists']).sum())
     if missing_count:
@@ -180,6 +135,12 @@ def train_baseline_from_metadata(
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     model.save(output / 'mobilenetv2_baseline.keras')
+    pd.DataFrame({
+        'y_true': y_test.astype(int),
+        'prob_normal': y_pred_prob[:, 0].astype(float),
+        'prob_tb': y_pred_prob[:, 1].astype(float),
+        'pred_label_default_0_5': y_pred.astype(int),
+    }).to_csv(output / 'test_predictions.csv', index=False)
     with open(output / 'metrics.json', 'w') as f:
         json.dump(metrics, f, indent=2)
     with open(output / 'history.json', 'w') as f:

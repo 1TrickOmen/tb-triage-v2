@@ -37,6 +37,8 @@ Build a clinically credible prototype for TB triage from chest X-rays using:
 4. Grad-CAM review on correct and incorrect predictions
 5. Calibration and threshold analysis
 
+Current Colab baseline tooling now supports post-hoc TB threshold sweeps from saved probabilities so precision/recall/F1 and confusion tradeoffs can be reviewed explicitly, instead of pretending `0.50` is sacred.
+
 ## Milestones
 ### M1 — Data Foundation
 - [ ] Define metadata schema

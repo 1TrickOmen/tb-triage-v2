@@ -11,6 +11,17 @@ from src.classification.data_utils import SEED, coerce_bool, resolve_metadata_pa
 LABELS = ['Normal', 'TB']
 
 
+def _counts_to_nested_dict(series: pd.Series) -> dict:
+    nested: dict[str, dict[str, int]] = {}
+    for key, value in series.items():
+        if isinstance(key, tuple) and len(key) == 2:
+            outer, inner = key
+            nested.setdefault(str(outer), {})[str(inner)] = int(value)
+        else:
+            nested[str(key)] = int(value)
+    return nested
+
+
 def _load_base_metadata(metadata_csv: str) -> pd.DataFrame:
     df = pd.read_csv(metadata_csv)
     df['include_for_training'] = df['include_for_training'].apply(coerce_bool)
@@ -78,9 +89,9 @@ def make_source_holdout_metadata(metadata_csv: str, holdout_source: str, output_
         'seed': int(seed),
         'output_metadata_csv': str(output_path),
         'output_holdout_csv': str(holdout_output_path) if holdout_output_path else '',
-        'seen_source_counts': seen_df.groupby(['source_dataset', 'label_final']).size().to_dict(),
-        'seen_split_counts': seen_df.groupby(['experiment_split', 'label_final']).size().to_dict(),
-        'holdout_counts': holdout_df.groupby(['source_dataset', 'label_final']).size().to_dict(),
+        'seen_source_counts': _counts_to_nested_dict(seen_df.groupby(['source_dataset', 'label_final']).size()),
+        'seen_split_counts': _counts_to_nested_dict(seen_df.groupby(['experiment_split', 'label_final']).size()),
+        'holdout_counts': _counts_to_nested_dict(holdout_df.groupby(['source_dataset', 'label_final']).size()),
         'seen_total': int(len(seen_df)),
         'holdout_total': int(len(holdout_df)),
     }

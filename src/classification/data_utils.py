@@ -21,17 +21,12 @@ def coerce_bool(value) -> bool:
 def load_images_from_metadata(df: pd.DataFrame, image_size=IMAGE_SIZE):
     images, labels = [], []
     label_map = {'Normal': 0, 'TB': 1}
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     for _, row in df.iterrows():
         img = cv2.imread(str(row['image_path']))
         if img is None:
             continue
         img = cv2.resize(img, image_size)
-        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-        cl = clahe.apply(l)
-        limg = cv2.merge((cl, a, b))
-        img = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         images.append(img)
         labels.append(label_map[row['label_final']])
     return np.array(images), np.array(labels)

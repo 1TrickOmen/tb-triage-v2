@@ -65,6 +65,7 @@ def train_baseline_from_metadata(
     trainable_base: bool = False,
     class_weight_mode: str = 'none',
     architecture: str = 'mobilenetv2',
+    mild_aug: bool = True,
 ):
     _configure_tensorflow()
 
@@ -114,17 +115,29 @@ def train_baseline_from_metadata(
     X_val = X_val.astype('float32') / 255.0
     X_test = X_test.astype('float32') / 255.0
 
-    datagen = ImageDataGenerator(
-        rotation_range=30,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
-        zoom_range=0.3,
-        horizontal_flip=True,
-        brightness_range=[0.8, 1.2],
-        shear_range=15,
-        fill_mode='constant',
-        cval=0
-    )
+    if mild_aug:
+        datagen = ImageDataGenerator(
+            rotation_range=10,
+            width_shift_range=0.1,
+            height_shift_range=0.1,
+            zoom_range=0.1,
+            horizontal_flip=True,
+            brightness_range=[0.9, 1.1],
+            fill_mode='constant',
+            cval=0
+        )
+    else:
+        datagen = ImageDataGenerator(
+            rotation_range=30,
+            width_shift_range=0.2,
+            height_shift_range=0.2,
+            zoom_range=0.3,
+            horizontal_flip=True,
+            brightness_range=[0.8, 1.2],
+            shear_range=15,
+            fill_mode='constant',
+            cval=0
+        )
     datagen.fit(X_train)
 
     train_generator = datagen.flow(X_train, y_train, sample_weight=train_sample_weight, batch_size=batch_size, shuffle=True)

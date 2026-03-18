@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import cv2
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, average_precision_score
+from sklearn.utils.class_weight import compute_class_weight
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras import optimizers, callbacks
 import tensorflow as tf
@@ -80,6 +81,7 @@ def train_baseline_from_metadata(
     epochs: int = DEFAULT_EPOCHS,
     learning_rate: float = DEFAULT_LEARNING_RATE,
     trainable_base: bool = False,
+    class_weight_mode: str = 'none',
 ):
     _configure_tensorflow()
 
@@ -119,6 +121,16 @@ def train_baseline_from_metadata(
     )
     datagen.fit(X_train)
 
+    train_generator = datagen.flow(X_train, y_train, batch_size=batch_size, shuffle=True)
+
+    class_weight = None
+    if class_weight_mode == 'balanced':
+        classes = np.unique(y_train)
+        weights = compute_class_weight(class_weight='balanced', classes=classes, y=y_train)
+        class_weight = {int(label): float(weight) for label, weight in zip(classes, weights)}
+    elif class_weight_mode != 'none':
+        raise ValueError("class_weight_mode must be 'none' or 'balanced'")
+
     model, last_conv_layer_name = build_mobilenetv2(
         input_shape=tuple(image_size) + (3,),
         num_classes=NUM_CLASSES,
@@ -131,11 +143,11 @@ def train_baseline_from_metadata(
     reduce_lr = callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.3, patience=7, min_lr=1e-7)
 
     history = model.fit(
-        datagen.flow(X_train, y_train, batch_size=batch_size),
-        steps_per_epoch=max(1, len(X_train) // batch_size),
+        train_generator,
         epochs=epochs,
         validation_data=(X_val, y_val),
         callbacks=[early_stopping, reduce_lr],
+        class_weight=class_weight,
         verbose=1,
     )
 
@@ -154,6 +166,8 @@ def train_baseline_from_metadata(
         'epochs_requested': int(epochs),
         'learning_rate': float(learning_rate),
         'trainable_base': bool(trainable_base),
+        'class_weight_mode': class_weight_mode,
+        'class_weight': class_weight,
         'tensorflow_version': tf.__version__,
         'cuda_visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES', ''),
         'confusion_matrix': confusion_matrix(y_test, y_pred).tolist(),
@@ -184,6 +198,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=DEFAULT_EPOCHS)
     parser.add_argument('--learning-rate', type=float, default=DEFAULT_LEARNING_RATE)
     parser.add_argument('--trainable-base', action='store_true')
+    parser.add_argument('--class-weight', choices=['none', 'balanced'], default='none')
     args = parser.parse_args()
     train_baseline_from_metadata(
         args.metadata_csv,
@@ -193,4 +208,5 @@ if __name__ == '__main__':
         epochs=args.epochs,
         learning_rate=args.learning_rate,
         trainable_base=args.trainable_base,
+        class_weight_mode=args.class_weight,
     )

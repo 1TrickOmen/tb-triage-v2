@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument('--epochs', type=int, default=15)
     parser.add_argument('--learning-rate', type=float, default=1e-4)
     parser.add_argument('--trainable-base', action='store_true')
+    parser.add_argument('--class-weight', choices=['none', 'balanced'], default='none', help='Apply training-set class weighting. Use balanced to upweight TB if classes are skewed.')
     parser.add_argument('--rebuild-metadata', action='store_true', help='Rebuild merged metadata from uploaded dataset tar files before training.')
     parser.add_argument('--tbx11k-tar', default='data/raw/tbx11k/tbx11k-DatasetNinja.tar')
     parser.add_argument('--chest-xray-tar', default='data/raw/chest-xray/chest-xray-masks-and-labels-DatasetNinja.tar')
@@ -60,6 +61,7 @@ def main() -> None:
         epochs=args.epochs,
         learning_rate=args.learning_rate,
         trainable_base=args.trainable_base,
+        class_weight_mode=args.class_weight,
     )
     print('metrics', json.dumps(metrics, indent=2))
     print('saved_to', output_dir)

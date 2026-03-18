@@ -55,7 +55,8 @@ Then run:
   --output-dir experiments/colab-baseline \
   --epochs 15 \
   --batch-size 32 \
-  --image-size 256
+  --image-size 256 \
+  --class-weight none
 ```
 
 ## Path 2 — train from raw tar archives
@@ -75,7 +76,8 @@ Then run:
   --output-dir experiments/colab-baseline \
   --epochs 15 \
   --batch-size 32 \
-  --image-size 256
+  --image-size 256 \
+  --class-weight none
 ```
 
 ## Outputs
@@ -88,4 +90,20 @@ After training, Colab writes:
 - The current baseline is **classification only**. U-Net segmentation is scaffolded in the repo but not yet wired into a Colab training flow here.
 - `merged_metadata.csv` may contain repo-relative image paths. The trainer now resolves those relative to the repo root automatically, which is what makes the Colab path sane.
 - This baseline still loads images into memory before training. It is fine for the current baseline scale on normal Colab RAM, but it is not yet the final streaming pipeline.
+- The training loop now relies on the Keras generator's native length instead of a manual `steps_per_epoch`, which avoids the intermittent "input ran out of data" warning seen in Colab.
+- To bias the loss toward TB recall on imbalanced data, rerun with `--class-weight balanced`.
 - If you hit RAM pressure, first reduce `--batch-size` to `16`.
+
+## Next experiment: class-weighted rerun
+From `/content/tb-triage-v2`, run:
+
+```bash
+!python scripts/colab_train_baseline.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/merged_metadata.csv \
+  --output-dir experiments/colab-baseline-class-weighted \
+  --epochs 15 \
+  --batch-size 32 \
+  --image-size 256 \
+  --class-weight balanced
+```

@@ -35,12 +35,13 @@ def main() -> None:
     parser.add_argument('--image-size', type=int, default=256)
     parser.add_argument('--threshold', type=float, default=0.40, help='Operating threshold applied to prob_tb')
     parser.add_argument('--thresholds', default='', help='Optional sweep. Defaults to the standard threshold grid.')
+    parser.add_argument('--architecture', choices=['mobilenetv2', 'densenet121'], default='mobilenetv2', help='Which CNN architecture was trained.')
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
     metadata_csv = (repo_root / args.metadata_csv).resolve()
     run_dir = (repo_root / args.run_dir).resolve()
-    model_path = run_dir / 'mobilenetv2_baseline.keras'
+    model_path = run_dir / f'{args.architecture}_baseline.keras'
     if not model_path.exists():
         raise FileNotFoundError(f'Saved model not found at {model_path}')
     if not metadata_csv.exists():

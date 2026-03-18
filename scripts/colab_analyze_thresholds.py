@@ -36,6 +36,7 @@ def main() -> None:
     parser.add_argument('--image-size', type=int, default=256)
     parser.add_argument('--thresholds', default='', help='Comma-separated TB thresholds, e.g. 0.1,0.2,0.3,0.4,0.5')
     parser.add_argument('--target-recall', type=float, default=None, help='Optional target TB recall. Script will print the best threshold meeting it.')
+    parser.add_argument('--architecture', choices=['mobilenetv2', 'densenet121'], default='mobilenetv2', help='Which CNN architecture was trained.')
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -49,7 +50,7 @@ def main() -> None:
     if predictions_path.exists():
         predictions_df = pd.read_csv(predictions_path)
     else:
-        model_path = run_dir / 'mobilenetv2_baseline.keras'
+        model_path = run_dir / f'{args.architecture}_baseline.keras'
         if not model_path.exists():
             raise FileNotFoundError(f'Could not find predictions CSV or saved model at {model_path}')
         metadata_csv = (repo_root / args.metadata_csv).resolve()

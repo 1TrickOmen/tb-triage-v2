@@ -85,8 +85,23 @@ def load_model(model_path: Path):
     return tf.keras.models.load_model(model_path, custom_objects=get_segmentation_custom_objects(), compile=False)
 
 
-def preprocess_image(image_bgr: np.ndarray, image_size: tuple[int, int]) -> np.ndarray:
+def get_model_input_channels(model: tf.keras.Model) -> int:
+    input_shape = model.input_shape
+    if isinstance(input_shape, list):
+        input_shape = input_shape[0]
+
+    channels = input_shape[-1]
+    if channels not in (1, 3):
+        raise ValueError(f'Unsupported segmentation model input shape: {input_shape}. Expected ...x1 or ...x3 input.')
+    return int(channels)
+
+
+def preprocess_image(image_bgr: np.ndarray, image_size: tuple[int, int], channels: int) -> np.ndarray:
     resized = cv2.resize(image_bgr, image_size)
+    if channels == 1:
+        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        return (gray.astype('float32') / 255.0)[..., np.newaxis]
+
     rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
     return rgb.astype('float32') / 255.0
 
@@ -124,6 +139,7 @@ def main() -> None:
     output_metadata_csv.parent.mkdir(parents=True, exist_ok=True)
 
     model = load_model(model_path)
+    input_channels = get_model_input_channels(model)
     df = pd.read_csv(metadata_csv)
     df = resolve_metadata_paths(df, str(metadata_csv))
 
@@ -145,7 +161,7 @@ def main() -> None:
             continue
 
         original_h, original_w = image_bgr.shape[:2]
-        image_input = preprocess_image(image_bgr, (args.image_size, args.image_size))
+        image_input = preprocess_image(image_bgr, (args.image_size, args.image_size), input_channels)
         prediction = model.predict(np.expand_dims(image_input, axis=0), verbose=0)[0]
         mask = postprocess_mask(prediction, (original_w, original_h), args.threshold)
 

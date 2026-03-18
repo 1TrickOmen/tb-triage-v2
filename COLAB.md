@@ -238,3 +238,58 @@ Compare these artifacts side by side:
 - raw threshold sweep: `experiments/colab-baseline-class-weighted/threshold_analysis/threshold_metrics.csv`
 - masked baseline metrics: `experiments/colab-baseline-masked-class-weighted/metrics.json`
 - masked threshold sweep: `experiments/colab-baseline-masked-class-weighted/threshold_analysis/threshold_metrics.csv`
+
+## External validation on the Pakistan Mendeley dataset
+This repo now has the minimal path for **external-only** evaluation of a saved classifier. It does **not** mix the external dataset into training: the generated metadata marks every row with `include_for_training=false` and `is_external_test=true`.
+
+### Acquisition assumption
+The Mendeley page is visible, but direct scripted download details were not reliably exposed from the page fetch. So the code assumes you will manually download and extract the dataset into the repo, for example under:
+
+- `/content/tb-triage-v2/data/external/mendeley_pakistan/`
+
+If the extracted dataset has obvious class folders such as `TB/` and `Normal/`, the metadata builder should infer labels automatically. If the naming is weird, pass `--tb-dir` and `--normal-dir` explicitly.
+
+### Step 1 — prepare external metadata
+If the extracted folder already contains clearly named TB and Normal subfolders:
+
+```bash
+!python scripts/colab_prepare_external_mendeley_metadata.py \
+  --repo-root /content/tb-triage-v2 \
+  --dataset-root data/external/mendeley_pakistan \
+  --output-csv data/processed/mendeley_pakistan_metadata.csv
+```
+
+If the dataset uses different folder names, be explicit, for example:
+
+```bash
+!python scripts/colab_prepare_external_mendeley_metadata.py \
+  --repo-root /content/tb-triage-v2 \
+  --dataset-root data/external/mendeley_pakistan \
+  --tb-dir Tuberculosis \
+  --normal-dir Normal \
+  --output-csv data/processed/mendeley_pakistan_metadata.csv
+```
+
+### Step 2 — evaluate the saved class-weighted run at threshold 0.40
+Assuming your best current run lives at `experiments/colab-baseline-class-weighted`:
+
+```bash
+!python scripts/colab_eval_external.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/mendeley_pakistan_metadata.csv \
+  --run-dir experiments/colab-baseline-class-weighted \
+  --threshold 0.40
+```
+
+That writes:
+- `experiments/colab-baseline-class-weighted/external_eval/mendeley_pakistan_metadata/predictions.csv`
+- `experiments/colab-baseline-class-weighted/external_eval/mendeley_pakistan_metadata/metrics.json`
+- `experiments/colab-baseline-class-weighted/external_eval/mendeley_pakistan_metadata/confusion_at_threshold.csv`
+- `experiments/colab-baseline-class-weighted/external_eval/mendeley_pakistan_metadata/threshold_metrics.csv`
+
+### What this external eval reports
+- full-dataset probability inference from the saved `.keras` model
+- AUROC and PR AUC
+- thresholded TB precision / recall / F1 at `0.40`
+- thresholded confusion counts (`tn`, `fp`, `fn`, `tp`)
+- optional threshold sweep using the same grid as the internal threshold analysis

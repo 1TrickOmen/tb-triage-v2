@@ -115,12 +115,15 @@ def train_baseline_from_metadata(
     X_test = X_test.astype('float32') / 255.0
 
     datagen = ImageDataGenerator(
-        rotation_range=20,
+        rotation_range=30,
         width_shift_range=0.2,
         height_shift_range=0.2,
-        zoom_range=0.2,
+        zoom_range=0.3,
         horizontal_flip=True,
-        fill_mode='nearest'
+        brightness_range=[0.8, 1.2],
+        shear_range=15,
+        fill_mode='constant',
+        cval=0
     )
     datagen.fit(X_train)
 

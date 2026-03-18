@@ -39,6 +39,8 @@ Build a clinically credible prototype for TB triage from chest X-rays using:
 
 Current Colab baseline tooling now supports post-hoc TB threshold sweeps from saved probabilities so precision/recall/F1 and confusion tradeoffs can be reviewed explicitly, instead of pretending `0.50` is sacred.
 
+It also now supports the minimal segmentation value test path: predict or consume lung masks, materialize masked classifier inputs into a second metadata CSV, then rerun the exact same MobileNetV2 training + threshold analysis flow on the masked variant.
+
 ## Milestones
 ### M1 — Data Foundation
 - [ ] Define metadata schema

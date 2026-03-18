@@ -10,7 +10,7 @@ from tensorflow.keras import optimizers, callbacks
 import tensorflow as tf
 
 from .data_utils import IMAGE_SIZE, SEED, coerce_bool, load_images_from_metadata, resolve_metadata_paths
-from .models import build_mobilenetv2
+from .models import build_mobilenetv2, build_densenet121
 from src.data.splits import stratified_train_val_test_split
 
 
@@ -64,6 +64,7 @@ def train_baseline_from_metadata(
     learning_rate: float = DEFAULT_LEARNING_RATE,
     trainable_base: bool = False,
     class_weight_mode: str = 'none',
+    architecture: str = 'mobilenetv2',
 ):
     _configure_tensorflow()
 
@@ -136,11 +137,19 @@ def train_baseline_from_metadata(
     if train_sample_weight is not None and class_weight is not None:
         raise ValueError('Use either metadata sample_weight or class_weight, not both at once.')
 
-    model, last_conv_layer_name = build_mobilenetv2(
-        input_shape=tuple(image_size) + (3,),
-        num_classes=NUM_CLASSES,
-        trainable_base=trainable_base,
-    )
+    if architecture == 'densenet121':
+        model, last_conv_layer_name = build_densenet121(
+            input_shape=tuple(image_size) + (3,),
+            num_classes=NUM_CLASSES,
+            trainable_base=trainable_base,
+        )
+    else:
+        model, last_conv_layer_name = build_mobilenetv2(
+            input_shape=tuple(image_size) + (3,),
+            num_classes=NUM_CLASSES,
+            trainable_base=trainable_base,
+        )
+    
     optimizer = optimizers.Adam(learning_rate=learning_rate)
     model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
@@ -189,6 +198,7 @@ def train_baseline_from_metadata(
         'trainable_base': bool(trainable_base),
         'class_weight_mode': class_weight_mode,
         'class_weight': class_weight,
+        'architecture': architecture,
         'sample_weight_column': 'sample_weight' if train_sample_weight is not None else '',
         'sample_weight_summary': sample_weight_summary,
         'split_summary': split_summary,
@@ -203,7 +213,7 @@ def train_baseline_from_metadata(
 
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    model.save(output / 'mobilenetv2_baseline.keras')
+    model.save(output / f'{architecture}_baseline.keras')
     pd.DataFrame({
         'y_true': y_test.astype(int),
         'prob_normal': y_pred_prob[:, 0].astype(float),
@@ -229,6 +239,7 @@ if __name__ == '__main__':
     parser.add_argument('--learning-rate', type=float, default=DEFAULT_LEARNING_RATE)
     parser.add_argument('--trainable-base', action='store_true')
     parser.add_argument('--class-weight', choices=['none', 'balanced'], default='none')
+    parser.add_argument('--architecture', choices=['mobilenetv2', 'densenet121'], default='mobilenetv2')
     args = parser.parse_args()
     train_baseline_from_metadata(
         args.metadata_csv,
@@ -239,4 +250,5 @@ if __name__ == '__main__':
         learning_rate=args.learning_rate,
         trainable_base=args.trainable_base,
         class_weight_mode=args.class_weight,
+        architecture=args.architecture,
     )

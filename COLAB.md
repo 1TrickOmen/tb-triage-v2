@@ -239,6 +239,139 @@ Compare these artifacts side by side:
 - masked baseline metrics: `experiments/colab-baseline-masked-class-weighted/metrics.json`
 - masked threshold sweep: `experiments/colab-baseline-masked-class-weighted/threshold_analysis/threshold_metrics.csv`
 
+## Source-held-out validation across the built-in sources
+This is the next disciplined experiment if you want a real generalization read instead of another comfy in-distribution score.
+
+### What this means here
+For each run, choose one source as the **true unseen test source** and train only on the remaining sources:
+- hold out `montgomery`
+- hold out `shenzhen`
+- hold out `tbx11k`
+
+The new helper writes two CSVs:
+- an **experiment metadata CSV** containing only seen-source `train` / `val` / `test` rows plus held-out rows marked `external_eval`
+- a **holdout-only CSV** for the true unseen source
+
+The trainer now honors explicit metadata splits when `experiment_split` is present, so it no longer re-randomizes the data and quietly wrecks the source-holdout design.
+
+If your repo clone still has the repaired merged CSV at `data/merged_metadata.csv` instead of `data/processed/merged_metadata.csv`, the new prep helper will fall back to that legacy path automatically. Tiny mercy.
+
+### Important assumptions
+- `source_dataset=montgomery` and `source_dataset=shenzhen` are inferred from the DatasetNinja chest X-ray archive filename prefixes (`MCUCXR_` and `CHNCXR_`).
+- `source_dataset=tbx11k` is a single source bucket. This ignores any hidden site/hospital heterogeneity inside TBX11K because the current repo metadata does not expose finer-grained provenance.
+- For the source-held-out experiment, only rows with `include_for_training=true` and `label_final in {Normal, TB}` are eligible. That means TBX11K rows already excluded from the binary baseline (`sick_but_non-tb`, `uncertain_tb`, and TBX11K's own archive `test` split) stay excluded.
+- The seen-source `test` split is still useful as a sanity check, but the real headline number should come from the held-out-source evaluation.
+
+### Step 1 — prepare one source-held-out split
+Example: hold out `shenzhen` as the true unseen source.
+
+```bash
+!python scripts/colab_prepare_source_holdout.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/merged_metadata.csv \
+  --holdout-source shenzhen
+```
+
+That writes:
+- `data/processed/source_holdout/shenzhen_experiment_metadata.csv`
+- `data/processed/source_holdout/shenzhen_holdout_only.csv`
+- `data/processed/source_holdout/shenzhen_summary.json`
+
+### Step 2 — train the current class-weighted MobileNetV2 baseline on seen sources only
+
+```bash
+!python scripts/colab_train_baseline.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/shenzhen_experiment_metadata.csv \
+  --output-dir experiments/source_holdout/shenzhen_class_weighted \
+  --epochs 15 \
+  --batch-size 32 \
+  --image-size 256 \
+  --class-weight balanced
+```
+
+This run uses only the explicit seen-source `train` / `val` / `test` rows from the prepared metadata.
+
+### Step 3 — analyze the seen-source internal test split
+
+```bash
+!python scripts/colab_analyze_thresholds.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/shenzhen_experiment_metadata.csv \
+  --run-dir experiments/source_holdout/shenzhen_class_weighted \
+  --target-recall 0.90
+```
+
+### Step 4 — evaluate on the true unseen held-out source
+Use the selected operating threshold from Step 3. If you want to stay consistent with the current baseline recommendation until you resweep, use `0.40` first.
+
+```bash
+!python scripts/colab_eval_external.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/shenzhen_holdout_only.csv \
+  --run-dir experiments/source_holdout/shenzhen_class_weighted \
+  --threshold 0.40
+```
+
+That writes the true unseen-source outputs under:
+- `experiments/source_holdout/shenzhen_class_weighted/external_eval/shenzhen_holdout_only/`
+
+### Repeat for the other two sources
+#### Hold out Montgomery
+```bash
+!python scripts/colab_prepare_source_holdout.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/merged_metadata.csv \
+  --holdout-source montgomery
+
+!python scripts/colab_train_baseline.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/montgomery_experiment_metadata.csv \
+  --output-dir experiments/source_holdout/montgomery_class_weighted \
+  --epochs 15 \
+  --batch-size 32 \
+  --image-size 256 \
+  --class-weight balanced
+
+!python scripts/colab_eval_external.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/montgomery_holdout_only.csv \
+  --run-dir experiments/source_holdout/montgomery_class_weighted \
+  --threshold 0.40
+```
+
+#### Hold out TBX11K
+```bash
+!python scripts/colab_prepare_source_holdout.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/merged_metadata.csv \
+  --holdout-source tbx11k
+
+!python scripts/colab_train_baseline.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/tbx11k_experiment_metadata.csv \
+  --output-dir experiments/source_holdout/tbx11k_class_weighted \
+  --epochs 15 \
+  --batch-size 32 \
+  --image-size 256 \
+  --class-weight balanced
+
+!python scripts/colab_eval_external.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/tbx11k_holdout_only.csv \
+  --run-dir experiments/source_holdout/tbx11k_class_weighted \
+  --threshold 0.40
+```
+
+### Recommended comparison table to fill in after the runs
+Do not average this away too early. Keep per-source results visible.
+
+| Held-out source | Seen-source train rows | Held-out test rows | Threshold used | Held-out recall (TB) | Held-out precision (TB) | Held-out specificity | AUROC | PR AUC |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| montgomery | 5327 | 138 | 0.40 or selected | TODO | TODO | TODO | TODO | TODO |
+| shenzhen | 4707 | 758 | 0.40 or selected | TODO | TODO | TODO | TODO | TODO |
+| tbx11k | 896 | 4569 | 0.40 or selected | TODO | TODO | TODO | TODO | TODO |
+
 ## External validation on the Pakistan Mendeley dataset
 This repo now has the minimal path for **external-only** evaluation of a saved classifier. It does **not** mix the external dataset into training: the generated metadata marks every row with `include_for_training=false` and `is_external_test=true`.
 

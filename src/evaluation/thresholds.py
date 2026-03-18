@@ -11,6 +11,9 @@ from src.classification.data_utils import IMAGE_SIZE, SEED, coerce_bool, load_im
 from src.data.splits import stratified_train_val_test_split
 
 
+EXPLICIT_SPLIT_COLUMN_CANDIDATES = ['experiment_split', 'split']
+
+
 DEFAULT_THRESHOLDS = [
     0.05, 0.10, 0.15, 0.20, 0.25,
     0.30, 0.35, 0.40, 0.45, 0.50,
@@ -36,12 +39,33 @@ def _load_labeled_metadata_rows(metadata_csv: str, *, include_training_only: boo
     return df
 
 
+def _select_explicit_split_column(df: pd.DataFrame) -> str | None:
+    for column in EXPLICIT_SPLIT_COLUMN_CANDIDATES:
+        if column not in df.columns:
+            continue
+        values = set(df[column].dropna().astype(str).str.strip().str.lower())
+        if {'train', 'val', 'test'}.issubset(values):
+            return column
+    return None
+
+
 def load_test_split_from_metadata(metadata_csv: str, image_size=IMAGE_SIZE, seed: int = SEED):
     df = _load_labeled_metadata_rows(metadata_csv, include_training_only=True)
-    images, labels = load_images_from_metadata(df, image_size=image_size)
-    _, _, X_test, _, _, y_test = stratified_train_val_test_split(images, labels, seed=seed)
-    X_test = X_test.astype('float32') / 255.0
-    return X_test, y_test
+    split_column = _select_explicit_split_column(df)
+    if split_column:
+        df = df[df[split_column].astype(str).str.strip().str.lower() == 'test'].copy()
+        if df.empty:
+            raise ValueError(f'Metadata split column {split_column!r} does not contain any test rows.')
+        images, labels = load_images_from_metadata(df, image_size=image_size)
+    else:
+        images, labels = load_images_from_metadata(df, image_size=image_size)
+        _, _, X_test, _, _, y_test = stratified_train_val_test_split(images, labels, seed=seed)
+        X_test = X_test.astype('float32') / 255.0
+        return X_test, y_test
+    if len(images) == 0:
+        raise ValueError('No images were loaded from metadata test split.')
+    X_test = images.astype('float32') / 255.0
+    return X_test, labels.astype(int)
 
 
 def load_full_eval_set_from_metadata(metadata_csv: str, image_size=IMAGE_SIZE) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:

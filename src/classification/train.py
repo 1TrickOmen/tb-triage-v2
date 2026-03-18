@@ -13,10 +13,33 @@ from .data_utils import IMAGE_SIZE, SEED, coerce_bool, load_images_from_metadata
 from .models import build_mobilenetv2
 from src.data.splits import stratified_train_val_test_split
 
+
+EXPLICIT_SPLIT_COLUMN_CANDIDATES = ['experiment_split', 'split']
+
 BATCH_SIZE = 32
 NUM_CLASSES = 2
 DEFAULT_EPOCHS = 50
 DEFAULT_LEARNING_RATE = 1e-4
+
+
+def _select_explicit_split_column(df: pd.DataFrame) -> str | None:
+    for column in EXPLICIT_SPLIT_COLUMN_CANDIDATES:
+        if column not in df.columns:
+            continue
+        values = set(df[column].dropna().astype(str).str.strip().str.lower())
+        if {'train', 'val', 'test'}.issubset(values):
+            return column
+    return None
+
+
+def _load_split_subset(df: pd.DataFrame, split_column: str, split_name: str, image_size):
+    split_df = df[df[split_column].astype(str).str.strip().str.lower() == split_name].copy()
+    if split_df.empty:
+        raise ValueError(f'Metadata split column {split_column!r} does not contain any {split_name!r} rows.')
+    images, labels = load_images_from_metadata(split_df, image_size=image_size)
+    if len(images) == 0:
+        raise ValueError(f'No images were loaded for split {split_name!r}.')
+    return split_df.reset_index(drop=True), images, labels
 
 
 def _configure_tensorflow() -> None:
@@ -52,15 +75,34 @@ def train_baseline_from_metadata(
     if df['label_final'].nunique() < 2:
         raise ValueError('Need at least two classes with valid training rows.')
 
-    images, labels = load_images_from_metadata(df, image_size=image_size)
-    if len(images) == 0:
-        raise ValueError('No images were loaded from metadata.')
-    if len(set(labels.tolist())) < 2:
-        raise ValueError('Loaded images do not contain both Normal and TB classes.')
+    split_column = _select_explicit_split_column(df)
+    if split_column:
+        train_df, X_train, y_train = _load_split_subset(df, split_column, 'train', image_size)
+        val_df, X_val, y_val = _load_split_subset(df, split_column, 'val', image_size)
+        test_df, X_test, y_test = _load_split_subset(df, split_column, 'test', image_size)
+        split_summary = {
+            split_column: split_column,
+            'train_rows': int(len(train_df)),
+            'val_rows': int(len(val_df)),
+            'test_rows': int(len(test_df)),
+            'train_sources': train_df['source_dataset'].value_counts().to_dict() if 'source_dataset' in train_df.columns else {},
+            'val_sources': val_df['source_dataset'].value_counts().to_dict() if 'source_dataset' in val_df.columns else {},
+            'test_sources': test_df['source_dataset'].value_counts().to_dict() if 'source_dataset' in test_df.columns else {},
+        }
+    else:
+        images, labels = load_images_from_metadata(df, image_size=image_size)
+        if len(images) == 0:
+            raise ValueError('No images were loaded from metadata.')
+        if len(set(labels.tolist())) < 2:
+            raise ValueError('Loaded images do not contain both Normal and TB classes.')
 
-    X_train, X_val, X_test, y_train, y_val, y_test = stratified_train_val_test_split(
-        images, labels, seed=SEED
-    )
+        X_train, X_val, X_test, y_train, y_val, y_test = stratified_train_val_test_split(
+            images, labels, seed=SEED
+        )
+        split_summary = {
+            'split_column': '',
+            'split_strategy': 'random_stratified_from_training_rows',
+        }
 
     X_train = X_train.astype('float32') / 255.0
     X_val = X_val.astype('float32') / 255.0
@@ -123,6 +165,7 @@ def train_baseline_from_metadata(
         'trainable_base': bool(trainable_base),
         'class_weight_mode': class_weight_mode,
         'class_weight': class_weight,
+        'split_summary': split_summary,
         'tensorflow_version': tf.__version__,
         'cuda_visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES', ''),
         'confusion_matrix': confusion_matrix(y_test, y_pred).tolist(),

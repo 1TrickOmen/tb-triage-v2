@@ -20,7 +20,7 @@ BATCH_SIZE = 32
 NUM_CLASSES = 2
 DEFAULT_EPOCHS = 50
 DEFAULT_LEARNING_RATE = 1e-4
-DEFAULT_MILD_AUG = True
+DEFAULT_AUGMENTATION = 'mild'
 
 
 def _select_explicit_split_column(df: pd.DataFrame) -> str | None:
@@ -67,7 +67,7 @@ def train_baseline_from_metadata(
     trainable_fraction: float | None = None,
     class_weight_mode: str = 'none',
     architecture: str = 'mobilenetv2',
-    mild_aug: bool = DEFAULT_MILD_AUG,
+    mild_aug: str = DEFAULT_AUGMENTATION,
 ):
     _configure_tensorflow()
 
@@ -117,7 +117,10 @@ def train_baseline_from_metadata(
     X_val = X_val.astype('float32') / 255.0
     X_test = X_test.astype('float32') / 255.0
 
-    if mild_aug:
+    if mild_aug == 'none':
+        datagen = ImageDataGenerator()
+        augmentation_mode = 'none'
+    elif mild_aug == 'mild':
         datagen = ImageDataGenerator(
             rotation_range=10,
             width_shift_range=0.1,
@@ -261,7 +264,7 @@ if __name__ == '__main__':
     parser.add_argument('--trainable-fraction', type=float, default=None, help='Fraction of backbone layers to unfreeze from the end, e.g. 0.25')
     parser.add_argument('--class-weight', choices=['none', 'balanced'], default='none')
     parser.add_argument('--architecture', choices=['mobilenetv2', 'densenet121'], default='mobilenetv2')
-    parser.add_argument('--augmentation', choices=['mild', 'strong'], default='mild')
+    parser.add_argument('--augmentation', choices=['none', 'mild', 'strong'], default='mild')
     args = parser.parse_args()
     train_baseline_from_metadata(
         args.metadata_csv,
@@ -274,5 +277,5 @@ if __name__ == '__main__':
         trainable_fraction=args.trainable_fraction,
         class_weight_mode=args.class_weight,
         architecture=args.architecture,
-        mild_aug=(args.augmentation == 'mild'),
+        mild_aug=args.augmentation,
     )

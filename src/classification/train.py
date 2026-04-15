@@ -20,6 +20,7 @@ BATCH_SIZE = 32
 NUM_CLASSES = 2
 DEFAULT_EPOCHS = 50
 DEFAULT_LEARNING_RATE = 1e-4
+DEFAULT_MILD_AUG = True
 
 
 def _select_explicit_split_column(df: pd.DataFrame) -> str | None:
@@ -63,9 +64,10 @@ def train_baseline_from_metadata(
     epochs: int = DEFAULT_EPOCHS,
     learning_rate: float = DEFAULT_LEARNING_RATE,
     trainable_base: bool = False,
+    trainable_fraction: float | None = None,
     class_weight_mode: str = 'none',
     architecture: str = 'mobilenetv2',
-    mild_aug: bool = True,
+    mild_aug: bool = DEFAULT_MILD_AUG,
 ):
     _configure_tensorflow()
 
@@ -126,6 +128,7 @@ def train_baseline_from_metadata(
             fill_mode='constant',
             cval=0
         )
+        augmentation_mode = 'mild'
     else:
         datagen = ImageDataGenerator(
             rotation_range=30,
@@ -138,6 +141,7 @@ def train_baseline_from_metadata(
             fill_mode='constant',
             cval=0
         )
+        augmentation_mode = 'strong'
     datagen.fit(X_train)
 
     train_generator = datagen.flow(X_train, y_train, sample_weight=train_sample_weight, batch_size=batch_size, shuffle=True)
@@ -153,19 +157,17 @@ def train_baseline_from_metadata(
     if train_sample_weight is not None and class_weight is not None:
         raise ValueError('Use either metadata sample_weight or class_weight, not both at once.')
 
+    model_kwargs = {
+        'input_shape': tuple(image_size) + (3,),
+        'num_classes': NUM_CLASSES,
+        'trainable_base': trainable_base,
+        'trainable_fraction': trainable_fraction,
+    }
     if architecture == 'densenet121':
-        model, last_conv_layer_name = build_densenet121(
-            input_shape=tuple(image_size) + (3,),
-            num_classes=NUM_CLASSES,
-            trainable_base=trainable_base,
-        )
+        model, last_conv_layer_name = build_densenet121(**model_kwargs)
     else:
-        model, last_conv_layer_name = build_mobilenetv2(
-            input_shape=tuple(image_size) + (3,),
-            num_classes=NUM_CLASSES,
-            trainable_base=trainable_base,
-        )
-    
+        model, last_conv_layer_name = build_mobilenetv2(**model_kwargs)
+
     optimizer = optimizers.Adam(learning_rate=learning_rate)
     model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
@@ -212,9 +214,11 @@ def train_baseline_from_metadata(
         'epochs_requested': int(epochs),
         'learning_rate': float(learning_rate),
         'trainable_base': bool(trainable_base),
+        'trainable_fraction': None if trainable_fraction is None else float(trainable_fraction),
         'class_weight_mode': class_weight_mode,
         'class_weight': class_weight,
         'architecture': architecture,
+        'augmentation_mode': augmentation_mode,
         'sample_weight_column': 'sample_weight' if train_sample_weight is not None else '',
         'sample_weight_summary': sample_weight_summary,
         'split_summary': split_summary,
@@ -254,8 +258,10 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=DEFAULT_EPOCHS)
     parser.add_argument('--learning-rate', type=float, default=DEFAULT_LEARNING_RATE)
     parser.add_argument('--trainable-base', action='store_true')
+    parser.add_argument('--trainable-fraction', type=float, default=None, help='Fraction of backbone layers to unfreeze from the end, e.g. 0.25')
     parser.add_argument('--class-weight', choices=['none', 'balanced'], default='none')
     parser.add_argument('--architecture', choices=['mobilenetv2', 'densenet121'], default='mobilenetv2')
+    parser.add_argument('--augmentation', choices=['mild', 'strong'], default='mild')
     args = parser.parse_args()
     train_baseline_from_metadata(
         args.metadata_csv,
@@ -265,6 +271,8 @@ if __name__ == '__main__':
         epochs=args.epochs,
         learning_rate=args.learning_rate,
         trainable_base=args.trainable_base,
+        trainable_fraction=args.trainable_fraction,
         class_weight_mode=args.class_weight,
         architecture=args.architecture,
+        mild_aug=(args.augmentation == 'mild'),
     )

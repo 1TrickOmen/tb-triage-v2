@@ -292,6 +292,68 @@ That writes:
 
 This run uses only the explicit seen-source `train` / `val` / `test` rows from the prepared metadata.
 
+## Recovery run after the collapsed Shenzhen DenseNet result
+This is the clean next ablation the repo now supports directly. It keeps the honest Shenzhen source-held-out protocol, drops aggressive sample weighting, uses DenseNet121, and unfreezes only the tail of the backbone instead of freezing everything or flinging the whole network wide open.
+
+### Why this is the next sane run
+- same **Shenzhen holdout** truth-serum split
+- **DenseNet121** stays, because MobileNet already looked too flimsy
+- **no source-balanced sample weights** for the first recovery run
+- **partial unfreezing** via `--trainable-fraction` instead of a binary frozen/unfrozen toggle
+- **low learning rate**
+- **mild augmentation** only
+
+### Step 1 — prepare the Shenzhen held-out metadata
+```bash
+!python scripts/colab_prepare_source_holdout.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/merged_metadata.csv \
+  --holdout-source shenzhen
+```
+
+### Step 2 — run the recovery experiment
+```bash
+!python scripts/colab_train_baseline.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/shenzhen_experiment_metadata.csv \
+  --output-dir experiments/source_holdout/shenzhen_densenet121_partial_unfreeze_lr3e5 \
+  --architecture densenet121 \
+  --epochs 20 \
+  --batch-size 32 \
+  --image-size 256 \
+  --learning-rate 3e-5 \
+  --trainable-fraction 0.25 \
+  --class-weight none \
+  --augmentation mild
+```
+
+Recommended reading of this setup:
+- `--trainable-fraction 0.25` = unfreeze roughly the last quarter of the DenseNet backbone
+- `--class-weight none` = do **not** repeat the aggressive weighting path yet
+- `--augmentation mild` = preserve the rollback away from the bad strong-augmentation recipe
+
+### Step 3 — analyze the seen-source internal test split
+```bash
+!python scripts/colab_analyze_thresholds.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/shenzhen_experiment_metadata.csv \
+  --run-dir experiments/source_holdout/shenzhen_densenet121_partial_unfreeze_lr3e5 \
+  --architecture densenet121 \
+  --target-recall 0.90
+```
+
+### Step 4 — evaluate on the true unseen Shenzhen holdout
+Start with `0.40` for continuity, then compare against the threshold selected in Step 3.
+
+```bash
+!python scripts/colab_eval_external.py \
+  --repo-root /content/tb-triage-v2 \
+  --metadata-csv data/processed/source_holdout/shenzhen_holdout_only.csv \
+  --run-dir experiments/source_holdout/shenzhen_densenet121_partial_unfreeze_lr3e5 \
+  --architecture densenet121 \
+  --threshold 0.40
+```
+
 ### Step 3 — analyze the seen-source internal test split
 
 ```bash
